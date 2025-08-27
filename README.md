@@ -483,6 +483,22 @@ If you haven't set up rules, or need to specify a different project or user, you
 
 Cursor's AI will use the Jira MCP server to fetch the tasks, and then proceed with the planning and scheduling request.
 
+### setup for Amazon Q
+one time step 
+git clone https://github.com/Nipun-706/Jira-MCP-Server-Max.git
+cd Jira-MCP-Server-Max
+npm install
+npm run build
+
+use below settings as per screenshot
+
+<img width="428" height="617" alt="amzaon q" src="https://github.com/user-attachments/assets/ef1d3c6c-9b11-46f6-b128-1dd21326e74e" />
+
+change red higlighted values as mentioned below
+
+keep name, transport, arguments same as screenshot
+Command -> add nodes exe location path of your systm
+ 
 
 ## References
 
