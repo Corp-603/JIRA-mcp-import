@@ -49,6 +49,36 @@ interface CreateIssuesBulkArgs {
   }>;
 }
 
+interface GetIssueArgs {
+  issueKey: string;
+}
+
+interface SearchIssuesArgs {
+  jql: string;
+  maxResults?: number;
+}
+
+interface UpdateIssueArgs {
+  issueKey: string;
+  summary?: string;
+  description?: string;
+  assignee?: string;
+  priority?: string;
+  labels?: string[];
+  components?: string[];
+}
+
+interface TransitionIssueArgs {
+  issueKey: string;
+  transitionId: string;
+  comment?: string;
+}
+
+interface AddCommentArgs {
+  issueKey: string;
+  comment: string;
+}
+
 interface ToolDefinition {
   description: string;
   inputSchema: object;
@@ -105,6 +135,66 @@ class JiraServer {
             }
           },
           required: ["issues"]
+        }
+      },
+      jira_get_issue: {
+        description: "Get details of a specific issue",
+        inputSchema: {
+          type: "object",
+          properties: {
+            issueKey: { type: "string" }
+          },
+          required: ["issueKey"]
+        }
+      },
+      jira_search: {
+        description: "Search issues using JQL",
+        inputSchema: {
+          type: "object",
+          properties: {
+            jql: { type: "string" },
+            maxResults: { type: "number" }
+          },
+          required: ["jql"]
+        }
+      },
+      jira_update_issue: {
+        description: "Update an existing issue",
+        inputSchema: {
+          type: "object",
+          properties: {
+            issueKey: { type: "string" },
+            summary: { type: "string" },
+            description: { type: "string" },
+            assignee: { type: "string" },
+            priority: { type: "string" },
+            labels: { type: "array", items: { type: "string" } },
+            components: { type: "array", items: { type: "string" } }
+          },
+          required: ["issueKey"]
+        }
+      },
+      jira_transition_issue: {
+        description: "Transition an issue to a new status",
+        inputSchema: {
+          type: "object",
+          properties: {
+            issueKey: { type: "string" },
+            transitionId: { type: "string" },
+            comment: { type: "string" }
+          },
+          required: ["issueKey", "transitionId"]
+        }
+      },
+      jira_add_comment: {
+        description: "Add a comment to an issue",
+        inputSchema: {
+          type: "object",
+          properties: {
+            issueKey: { type: "string" },
+            comment: { type: "string" }
+          },
+          required: ["issueKey", "comment"]
         }
       }
     };
@@ -245,6 +335,133 @@ class JiraServer {
               content: [{
                 type: "text",
                 text: JSON.stringify({ message: "Bulk issue creation completed", results }, null, 2)
+              }]
+            };
+
+          case "jira_get_issue":
+            const getIssueArgs = request.params.arguments as GetIssueArgs;
+            if (!getIssueArgs?.issueKey) {
+              throw new McpError(ErrorCode.InvalidParams, "issueKey is required");
+            }
+            
+            const issue = await this.jira.findIssue(getIssueArgs.issueKey);
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(issue, null, 2)
+              }]
+            };
+
+          case "jira_search":
+            const searchArgs = request.params.arguments as SearchIssuesArgs;
+            if (!searchArgs?.jql) {
+              throw new McpError(ErrorCode.InvalidParams, "jql is required");
+            }
+            
+            const searchResults = await this.jira.searchJira(searchArgs.jql, { 
+              maxResults: searchArgs.maxResults || 50 
+            });
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(searchResults, null, 2)
+              }]
+            };
+
+          case "jira_update_issue":
+            const updateArgs = request.params.arguments as UpdateIssueArgs;
+            if (!updateArgs?.issueKey) {
+              throw new McpError(ErrorCode.InvalidParams, "issueKey is required");
+            }
+
+            const updateData: any = { fields: {} };
+            if (updateArgs.summary) updateData.fields.summary = updateArgs.summary;
+            if (updateArgs.description) {
+              updateData.fields.description = {
+                type: "doc",
+                version: 1,
+                content: [{
+                  type: "paragraph",
+                  content: [{
+                    type: "text",
+                    text: updateArgs.description
+                  }]
+                }]
+              };
+            }
+            if (updateArgs.assignee) updateData.fields.assignee = { accountId: updateArgs.assignee };
+            if (updateArgs.priority) updateData.fields.priority = { name: updateArgs.priority };
+            if (updateArgs.labels) updateData.fields.labels = updateArgs.labels;
+            if (updateArgs.components) updateData.fields.components = updateArgs.components.map(c => ({ name: c }));
+
+            await this.jira.updateIssue(updateArgs.issueKey, updateData);
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ message: "Issue updated successfully", issueKey: updateArgs.issueKey })
+              }]
+            };
+
+          case "jira_transition_issue":
+            const transitionArgs = request.params.arguments as TransitionIssueArgs;
+            if (!transitionArgs?.issueKey || !transitionArgs?.transitionId) {
+              throw new McpError(ErrorCode.InvalidParams, "issueKey and transitionId are required");
+            }
+
+            const transitionData: any = {
+              transition: { id: transitionArgs.transitionId }
+            };
+            
+            if (transitionArgs.comment) {
+              transitionData.update = {
+                comment: [{
+                  add: {
+                    body: {
+                      type: "doc",
+                      version: 1,
+                      content: [{
+                        type: "paragraph",
+                        content: [{
+                          type: "text",
+                          text: transitionArgs.comment
+                        }]
+                      }]
+                    }
+                  }
+                }]
+              };
+            }
+
+            await this.jira.transitionIssue(transitionArgs.issueKey, transitionData);
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ 
+                  message: "Issue transitioned successfully", 
+                  issueKey: transitionArgs.issueKey,
+                  transitionId: transitionArgs.transitionId
+                })
+              }]
+            };
+
+          case "jira_add_comment":
+            const commentArgs = request.params.arguments as AddCommentArgs;
+            if (!commentArgs?.issueKey || !commentArgs?.comment) {
+              throw new McpError(ErrorCode.InvalidParams, "issueKey and comment are required");
+            }
+
+            // Use jira-client's built-in addComment method
+            const addedComment = await this.jira.addComment(commentArgs.issueKey, commentArgs.comment);
+            
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ 
+                  message: "Comment added successfully", 
+                  issueKey: commentArgs.issueKey,
+                  commentId: addedComment.id,
+                  comment: commentArgs.comment
+                }, null, 2)
               }]
             };
 
