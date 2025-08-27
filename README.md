@@ -483,48 +483,6 @@ If you haven't set up rules, or need to specify a different project or user, you
 
 Cursor's AI will use the Jira MCP server to fetch the tasks, and then proceed with the planning and scheduling request.
 
-### Installing via Smithery
-
-To install Jira MCP Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@George5562/Jira-MCP-Server):
-
-```bash
-npx -y @smithery/cli install @George5562/Jira-MCP-Server --client claude
-```
-
-### Manual Installation
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/George5562/Jira-MCP-Server.git
-   cd Jira-MCP-Server
-   ```
-
-2. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-3. Configure environment variables:
-   Create a `.env` file in the root directory:
-
-   ```bash
-   JIRA_HOST=your-instance.atlassian.net
-   JIRA_EMAIL=your-email@example.com
-   JIRA_API_TOKEN=your-api-token
-   ```
-
-4. Build the project:
-
-   ```bash
-   npm run build
-   ```
-
-5. Start the server:
-   ```bash
-   npm start
-   ```
 
 ## References
 
