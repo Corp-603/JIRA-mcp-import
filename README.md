@@ -354,7 +354,7 @@ The server provides detailed error messages for:
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/George5562/Jira-MCP-Server.git
+git clone https://github.com/Nipun-706/Jira-MCP-Server-Max.git
    cd Jira-MCP-Server
    ```
 
@@ -483,7 +483,7 @@ If you haven't set up rules, or need to specify a different project or user, you
 
 Cursor's AI will use the Jira MCP server to fetch the tasks, and then proceed with the planning and scheduling request.
 
-### setup for Amazon Q
+### Setup for Amazon Q
 one time step 
 git clone https://github.com/Nipun-706/Jira-MCP-Server-Max.git
 cd Jira-MCP-Server-Max
