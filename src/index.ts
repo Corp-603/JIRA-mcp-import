@@ -212,7 +212,7 @@ class JiraServer {
       username: JIRA_EMAIL,
       password: JIRA_API_TOKEN,
       apiVersion: "3",
-      strictSSL: true,
+      strictSSL: false,
     });
 
     this.setupToolHandlers();
