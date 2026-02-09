@@ -46,6 +46,7 @@ interface CreateIssuesBulkArgs {
     labels?: string[];
     components?: string[];
     parent?: string;
+    platform?: string;
   }>;
 }
 
@@ -128,7 +129,8 @@ class JiraServer {
                   priority: { type: "string" },
                   labels: { type: "array", items: { type: "string" } },
                   components: { type: "array", items: { type: "string" } },
-                  parent: { type: "string" }
+                  parent: { type: "string" },
+                  platform: { type: "string" }
                 },
                 required: ["summary", "issueType", "projectKey"]
               }
@@ -310,6 +312,9 @@ class JiraServer {
                   }
                   if (issue.parent) {
                     issueData.fields.parent = { key: issue.parent };
+                  }
+                  if (issue.platform) {
+                    issueData.fields.customfield_10037 = { value: issue.platform };
                   }
 
                   const createdIssue = await this.jira.addNewIssue(issueData);
