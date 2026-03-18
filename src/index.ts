@@ -13,6 +13,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import JiraClient from "jira-client";
 import type { Request } from "@modelcontextprotocol/sdk/types.js";
+import * as fs from "fs";
+import * as path from "path";
+import ExcelJS from "exceljs";
 
 const DEFAULT_PROJECT = {
   KEY: "CCS",
@@ -78,6 +81,19 @@ interface TransitionIssueArgs {
 interface AddCommentArgs {
   issueKey: string;
   comment: string;
+}
+
+interface AddAttachmentArgs {
+  issueKey: string;
+  filePath: string;
+}
+
+interface GenerateExcelArgs {
+  fileName: string;
+  sheetName?: string;
+  columns: Array<{ header: string; key: string; width?: number }>;
+  rows: Array<Record<string, string>>;
+  outputDir?: string;
 }
 
 interface ToolDefinition {
@@ -198,6 +214,47 @@ class JiraServer {
           },
           required: ["issueKey", "comment"]
         }
+      },
+      jira_add_attachment: {
+        description: "Add a file attachment to a Jira issue",
+        inputSchema: {
+          type: "object",
+          properties: {
+            issueKey: { type: "string" },
+            filePath: { type: "string" }
+          },
+          required: ["issueKey", "filePath"]
+        }
+      },
+      generate_excel: {
+        description: "Generate an Excel (.xlsx) file with custom columns and rows. Returns the file path of the generated file.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            fileName: { type: "string", description: "Name of the Excel file (without extension)" },
+            sheetName: { type: "string", description: "Name of the worksheet (default: Sheet1)" },
+            columns: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  header: { type: "string" },
+                  key: { type: "string" },
+                  width: { type: "number" }
+                },
+                required: ["header", "key"]
+              },
+              description: "Column definitions with header, key, and optional width"
+            },
+            rows: {
+              type: "array",
+              items: { type: "object" },
+              description: "Array of row objects where keys match column keys"
+            },
+            outputDir: { type: "string", description: "Output directory path (default: current working directory)" }
+          },
+          required: ["fileName", "columns", "rows"]
+        }
       }
     };
 
@@ -314,7 +371,16 @@ class JiraServer {
                     issueData.fields.parent = { key: issue.parent };
                   }
                   if (issue.platform) {
-                    issueData.fields.customfield_10037 = { value: issue.platform };
+                    const platformMap: Record<string, string> = {
+                      'Android': '10131',
+                      'IOS': '10132',
+                      'WEB': '10145',
+                      'API or Service': '10146',
+                      'Flutter': '10272',
+                      'Testing': '10282'
+                    };
+                    const platformId = platformMap[issue.platform] || issue.platform;
+                    issueData.fields.customfield_10072 = { id: platformId };
                   }
 
                   const createdIssue = await this.jira.addNewIssue(issueData);
@@ -466,6 +532,78 @@ class JiraServer {
                   issueKey: commentArgs.issueKey,
                   commentId: addedComment.id,
                   comment: commentArgs.comment
+                }, null, 2)
+              }]
+            };
+
+          case "jira_add_attachment":
+            const attachArgs = request.params.arguments as AddAttachmentArgs;
+            if (!attachArgs?.issueKey || !attachArgs?.filePath) {
+              throw new McpError(ErrorCode.InvalidParams, "issueKey and filePath are required");
+            }
+
+            const resolvedPath = path.resolve(attachArgs.filePath);
+            if (!fs.existsSync(resolvedPath)) {
+              throw new McpError(ErrorCode.InvalidParams, `File not found: ${resolvedPath}`);
+            }
+
+            const readStream = fs.createReadStream(resolvedPath);
+            const attachResult = await this.jira.addAttachmentOnIssue(attachArgs.issueKey, readStream);
+
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  message: "Attachment added successfully",
+                  issueKey: attachArgs.issueKey,
+                  filePath: resolvedPath,
+                  attachment: attachResult
+                }, null, 2)
+              }]
+            };
+
+          case "generate_excel":
+            const excelArgs = request.params.arguments as GenerateExcelArgs;
+            if (!excelArgs?.fileName || !excelArgs?.columns || !excelArgs?.rows) {
+              throw new McpError(ErrorCode.InvalidParams, "fileName, columns, and rows are required");
+            }
+
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet(excelArgs.sheetName || 'Sheet1');
+
+            ws.columns = excelArgs.columns.map(col => ({
+              header: col.header,
+              key: col.key,
+              width: col.width || 30
+            }));
+
+            // Style header row
+            ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D32' } };
+            ws.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+            for (const row of excelArgs.rows) {
+              ws.addRow(row);
+            }
+
+            // Auto-wrap text for all rows
+            ws.eachRow((row) => { row.alignment = { ...row.alignment, wrapText: true }; });
+
+            const outDir = excelArgs.outputDir ? path.resolve(excelArgs.outputDir) : process.cwd();
+            if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+            const excelFilePath = path.join(outDir, `${excelArgs.fileName}.xlsx`);
+            await wb.xlsx.writeFile(excelFilePath);
+
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  message: "Excel file generated successfully",
+                  filePath: excelFilePath,
+                  fileName: `${excelArgs.fileName}.xlsx`,
+                  rowCount: excelArgs.rows.length,
+                  columnCount: excelArgs.columns.length
                 }, null, 2)
               }]
             };

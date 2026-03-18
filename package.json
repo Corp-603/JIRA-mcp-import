@@ -25,6 +25,7 @@
   "devDependencies": {
     "@types/jira-client": "^7.1.9",
     "@types/node": "^20.11.24",
+    "exceljs": "^4.4.0",
     "typescript": "^5.3.3"
   }
 }
