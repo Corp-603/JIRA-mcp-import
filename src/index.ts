@@ -283,6 +283,20 @@ class JiraServer {
     });
   }
 
+  private async jiraFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
+    const url = `https://${JIRA_HOST}${endpoint}`;
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${JIRA_EMAIL}:${JIRA_API_TOKEN}`).toString('base64')}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        ...options.headers
+      }
+    });
+    return response.json();
+  }
+
   private setupToolHandlers(): void {
     this.server.setRequestHandler(ListToolsRequestSchema, async (request: Request) => ({
       tools: Object.entries(this.toolDefinitions).map(([name, def]) => ({
@@ -315,11 +329,14 @@ class JiraServer {
             }
             
             const jql = `project = ${args.projectKey}${args.jql ? ` AND ${args.jql}` : ''}`;
-            const issues = await this.jira.searchJira(jql, { maxResults: 100 });
+            const issuesResult = await this.jiraFetch('/rest/api/3/search/jql', {
+              method: 'POST',
+              body: JSON.stringify({ jql, maxResults: 100, fields: ["summary", "status", "assignee", "priority", "issuetype", "created", "updated", "sprint", "description", "reporter", "duedate", "customfield_10015"] })
+            });
             return {
               content: [{
                 type: "text",
-                text: JSON.stringify(issues.issues)
+                text: JSON.stringify(issuesResult.issues || issuesResult)
               }]
             };
 
@@ -429,8 +446,10 @@ class JiraServer {
               throw new McpError(ErrorCode.InvalidParams, "jql is required");
             }
             
-            const searchResults = await this.jira.searchJira(searchArgs.jql, { 
-              maxResults: searchArgs.maxResults || 50 
+            const maxResults = searchArgs.maxResults || 50;
+            const searchResults = await this.jiraFetch('/rest/api/3/search/jql', {
+              method: 'POST',
+              body: JSON.stringify({ jql: searchArgs.jql, maxResults, fields: ["summary", "status", "assignee", "priority", "issuetype", "created", "updated", "labels", "components", "sprint", "description", "reporter", "duedate", "customfield_10015"] })
             });
             return {
               content: [{
