@@ -85,7 +85,9 @@ interface AddCommentArgs {
 
 interface AddAttachmentArgs {
   issueKey: string;
-  filePath: string;
+  filePath?: string;
+  fileContent?: string;
+  fileName?: string;
 }
 
 interface GenerateExcelArgs {
@@ -216,14 +218,16 @@ class JiraServer {
         }
       },
       jira_add_attachment: {
-        description: "Add a file attachment to a Jira issue",
+        description: "Add a file attachment to a Jira issue. Provide either filePath (server-side file) or fileContent (base64) + fileName.",
         inputSchema: {
           type: "object",
           properties: {
-            issueKey: { type: "string" },
-            filePath: { type: "string" }
+            issueKey: { type: "string", description: "The Jira issue key (e.g. PROJ-123)" },
+            filePath: { type: "string", description: "Path to file on the server filesystem (optional if fileContent is provided)" },
+            fileContent: { type: "string", description: "Base64-encoded file content (use this to attach files from the client side)" },
+            fileName: { type: "string", description: "File name with extension (required when using fileContent, e.g. 'test-cases.xlsx')" }
           },
-          required: ["issueKey", "filePath"]
+          required: ["issueKey"]
         }
       },
       generate_excel: {
@@ -557,29 +561,54 @@ class JiraServer {
 
           case "jira_add_attachment":
             const attachArgs = request.params.arguments as AddAttachmentArgs;
-            if (!attachArgs?.issueKey || !attachArgs?.filePath) {
-              throw new McpError(ErrorCode.InvalidParams, "issueKey and filePath are required");
+            if (!attachArgs?.issueKey) {
+              throw new McpError(ErrorCode.InvalidParams, "issueKey is required");
             }
 
-            const resolvedPath = path.resolve(attachArgs.filePath);
-            if (!fs.existsSync(resolvedPath)) {
-              throw new McpError(ErrorCode.InvalidParams, `File not found: ${resolvedPath}`);
+            let attachFilePath: string;
+            let tempFilePath: string | null = null;
+
+            if (attachArgs.fileContent && attachArgs.fileName) {
+              // Base64 mode: decode content, write to temp file, attach, then clean up
+              const tempDir = path.join(process.cwd(), '.tmp-attachments');
+              if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+              tempFilePath = path.join(tempDir, attachArgs.fileName);
+              const buffer = Buffer.from(attachArgs.fileContent, 'base64');
+              fs.writeFileSync(tempFilePath, buffer);
+              attachFilePath = tempFilePath;
+            } else if (attachArgs.filePath) {
+              // File path mode: use server-side file path (existing behavior)
+              attachFilePath = path.resolve(attachArgs.filePath);
+            } else {
+              throw new McpError(ErrorCode.InvalidParams, "Provide either filePath or fileContent + fileName");
             }
 
-            const readStream = fs.createReadStream(resolvedPath);
-            const attachResult = await this.jira.addAttachmentOnIssue(attachArgs.issueKey, readStream);
+            if (!fs.existsSync(attachFilePath)) {
+              throw new McpError(ErrorCode.InvalidParams, `File not found: ${attachFilePath}`);
+            }
 
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify({
-                  message: "Attachment added successfully",
-                  issueKey: attachArgs.issueKey,
-                  filePath: resolvedPath,
-                  attachment: attachResult
-                }, null, 2)
-              }]
-            };
+            try {
+              const readStream = fs.createReadStream(attachFilePath);
+              const attachResult = await this.jira.addAttachmentOnIssue(attachArgs.issueKey, readStream);
+
+              return {
+                content: [{
+                  type: "text",
+                  text: JSON.stringify({
+                    message: "Attachment added successfully",
+                    issueKey: attachArgs.issueKey,
+                    fileName: attachArgs.fileName || path.basename(attachFilePath),
+                    attachment: attachResult
+                  }, null, 2)
+                }]
+              };
+            } finally {
+              // Clean up temp file if we created one
+              if (tempFilePath && fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+              }
+            }
 
           case "generate_excel":
             const excelArgs = request.params.arguments as GenerateExcelArgs;
